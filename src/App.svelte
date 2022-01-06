@@ -1,14 +1,60 @@
 <script lang="ts">
-  import {onMount} from 'svelte'
+  import { onMount } from "svelte";
+  import { request } from "graphql-request";
+  import Popup from "./Popup.svelte";
 
-  let count: number = 0
-  onMount(() => {
-    const interval = setInterval(() => count++, 1000)
-    return () => {
-      clearInterval(interval)
+  interface SearchResults {
+    findBooks: SearchResult[];
+  }
+
+  interface SearchResult {
+    id: number;
+    openLibraryId: string;
+    title: string;
+    author: string;
+    publishYear: number;
+    pageCount: number;
+  }
+
+  const query = `
+    mutation {
+      findBook(title: "art of electronics") {
+        id
+        openLibraryId
+        title
+        author
+        publishYear
+        pageCount
+      }
     }
-  })
+  `;
+  let count: number = 0;
+  let response: string = "not done!";
+  let updateSize = false;
+
+  onMount(() => {
+    request<SearchResults>("http://localhost:8000/graph", query).then(
+      (data) => {
+        response = JSON.stringify(data, undefined, 4);
+        updateSize = true;
+      }
+    );
+
+    const interval = setInterval(() => count++, 1000);
+    return () => {
+      clearInterval(interval);
+    };
+  });
 </script>
+
+<Popup>
+  <pre>{response}</pre>
+</Popup>
+<div class="App">
+  <header class="App-header">
+    <p>Page has been open for <code>{count}</code> seconds.</p>
+  </header>
+</div>
 
 <style>
   :global(body) {
@@ -17,10 +63,6 @@
   }
 
   .App {
-    text-align: center;
-  }
-
-  .App code {
     background: #0002;
     padding: 4px 8px;
     border-radius: 4px;
@@ -36,41 +78,6 @@
     min-height: 100vh;
     display: flex;
     flex-direction: column;
-    align-items: center;
     justify-content: center;
-    font-size: calc(10px + 2vmin);
-  }
-
-  .App-link {
-    color: #ff3e00;
-  }
-
-  .App-logo {
-    height: 36vmin;
-    pointer-events: none;
-    margin-bottom: 3rem;
-    animation: App-logo-spin infinite 1.6s ease-in-out alternate;
-  }
-
-  @keyframes App-logo-spin {
-    from {
-      transform: scale(1);
-    }
-    to {
-      transform: scale(1.06);
-    }
   }
 </style>
-
-<div class="App">
-  <header class="App-header">
-    <img src="/logo.svg" class="App-logo" alt="logo"/>
-    <p>Edit <code>src/App.svelte</code> and save to reload.</p>
-    <p>Page has been open for <code>{count}</code> seconds.</p>
-    <p>
-      <a class="App-link" href="https://svelte.dev" target="_blank" rel="noopener noreferrer">
-        Learn Svelte
-      </a>
-    </p>
-  </header>
-</div>

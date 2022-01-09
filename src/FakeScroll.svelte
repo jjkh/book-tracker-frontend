@@ -1,15 +1,16 @@
-<script>
-    import { onMount } from "svelte";
+<script lang="ts">
+    import { onMount, onDestroy } from "svelte";
 
-    const clamp = (num, min, max) => Math.min(Math.max(num, min), max);
+    function clamp(num: number, min: number, max: number) {
+        return Math.min(Math.max(num, min), max);
+    }
 
-    // TODO: extract this into it's own .ts file
     let drag = {
         dragging: false,
         scrollTop: 0,
         lastPageY: 0,
 
-        start(scrollTop, pageY) {
+        start(scrollTop: number, pageY: number) {
             this.dragging = true;
             this.scrollTop = scrollTop;
             this.lastPageY = pageY;
@@ -36,21 +37,21 @@
             );
         },
 
-        contains(y) {
+        contains(y: number) {
             return y >= this.top && y <= this.bottom;
         },
 
-        proportionOfHeight(y) {
-            const ratio = (y - this.top) / this.clientHeight();
+        proportionOfHeight(y: number) {
+            const ratio = (this.top - y) / this.clientHeight();
             return clamp(ratio, 0, 1);
         },
 
-        updateFromBoundingRect(rect) {
+        updateFromBoundingRect(rect: DOMRect) {
             this.top = rect.top;
             this.bottom = rect.bottom;
         },
 
-        setPadding(top, bottom) {
+        setPadding(top: number, bottom: number) {
             this.padding.top = top;
             this.padding.bottom = bottom;
         },
@@ -59,102 +60,125 @@
     let ratio = 0;
     let scrollRatio = 0;
 
-    let outer = undefined;
-    let wrap = undefined;
-    let content = undefined;
-    let track = undefined;
-    let bar = undefined;
+    let wrap: HTMLDivElement;
+    let content: HTMLDivElement;
+    let track: HTMLDivElement;
+    let bar: HTMLDivElement;
 
     onMount(() => {
-        outer = document.getElementById("outer");
-        wrap = document.getElementById("wrap");
-        content = document.getElementById("content");
-        track = document.getElementById("track");
-        bar = document.getElementById("bar");
-
-        setupCallbacks();
-        setTimeout(onScrollResize());
+        setupListeners();
+        setTimeout(onScrollResize);
     });
 
-    function setupCallbacks() {
+    onDestroy(removeListeners);
+
+    const resizeObserver = new ResizeObserver(onScrollResize);
+    function setupListeners() {
         window.addEventListener("resize", onScrollResize);
-        content.addEventListener("resize", onScrollResize);
-        content.addEventListener("scroll", onScrollResize);
-        outer.addEventListener("mouseenter", onScrollResize);
-        // TODO: fix this
-        // track.addEventListener("click", onTrackClick);
-        bar.addEventListener("mousedown", onStartDrag);
+
+        // check if the size of #content has changed
+        for (let child of content.children) {
+            resizeObserver.observe(child);
+        }
     }
 
-    // TODO: rework these event listeners to be less bad
-    function onStartDrag(mouseEvent) {
-        drag.start(content.scrollTop, mouseEvent.pageY);
+    function removeListeners() {
+        window.removeEventListener("resize", onScrollResize);
+        resizeObserver.disconnect();
 
-        document.body.classList.add("grabbed");
+        if (drag.dragging) {
+            bar.removeEventListener("pointermove", onDrag);
+            bar.removeEventListener("pointerup", onStopDrag);
+        }
+    }
+
+    function onStartDrag(e: Event) {
+        const pointerEvent = <PointerEvent>e;
+
         bar.classList.add("grabbed");
-        document.body.addEventListener("mousemove", onDrag);
-        bar.addEventListener("mousemove", onDrag);
-        document.body.addEventListener("mouseup", onStopDrag);
-        bar.addEventListener("mouseup", onStopDrag);
+        bar.addEventListener("pointermove", onDrag);
+        bar.addEventListener("pointerup", onStopDrag);
+        bar.setPointerCapture(pointerEvent.pointerId);
 
-        onDrag(mouseEvent);
+        drag.start(content.scrollTop, pointerEvent.pageY);
+        onDrag(pointerEvent);
     }
 
-    function onStopDrag(_mouseEvent) {
-        document.body.classList.remove("grabbed");
+    function onStopDrag(e: Event) {
+        const pointerEvent = <PointerEvent>e;
+
         bar.classList.remove("grabbed");
-        document.body.removeEventListener("mousemove", onDrag);
-        bar.removeEventListener("mousemove", onDrag);
-        document.body.removeEventListener("mouseup", onStopDrag);
-        bar.removeEventListener("mouseup", onStopDrag);
+        bar.removeEventListener("pointermove", onDrag);
+        bar.removeEventListener("pointerup", onStopDrag);
 
-        drag.stop();
+        bar.releasePointerCapture(pointerEvent.pointerId);
+        setTimeout(drag.stop.bind(drag));
     }
 
-    function onDrag(mouseEvent) {
-        const pageY = mouseEvent.pageY;
+    function onDrag(e: Event) {
+        const pointerEvent = <PointerEvent>e;
+
+        const pageY = pointerEvent.pageY;
         const delta = pageY - drag.lastPageY;
 
         requestAnimationFrame(() => {
             const docScrollTop = document.documentElement.scrollTop;
-            // NOTE: unsure what this is even doing?
             if (trackBounds.contains(pageY - docScrollTop)) {
                 // drag is within the bounds of the track
                 content.scrollTop = drag.scrollTop + delta / ratio;
             } else {
                 drag.scrollTop = content.scrollTop;
-                drag.lastPageY = mouseEvent.pageY;
+                drag.lastPageY = pointerEvent.pageY;
             }
         });
     }
 
-    function onTrackClick(mouseEvent) {
+    function onTrackClick(e: Event) {
         if (drag.dragging) return;
+        const pointerEvent = <PointerEvent>e;
 
-        const pageRatio = wrap.clientHeight / content.scrollHeight; // should be less padding?
-        const mouseRatio = trackBounds.proportionOfHeight(mouseEvent.clientY);
+        const pageRatio = wrap.clientHeight / content.scrollHeight;
+        const pointerRatio = trackBounds.proportionOfHeight(
+            pointerEvent.clientY
+        );
         const newRatio = clamp(
-            clamp(mouseRatio, scrollRatio - pageRatio, scrollRatio + pageRatio),
+            clamp(
+                pointerRatio,
+                scrollRatio - pageRatio,
+                scrollRatio + pageRatio
+            ),
             0,
             1 - pageRatio
         );
 
-        content.scrollTop = newRatio * (content.scrollHeight - wrap.height);
+        content.scrollTop =
+            newRatio * (content.scrollHeight - wrap.clientHeight);
         updateBar();
     }
 
+    let resizeDebouceTimeout: number | undefined = undefined;
     function onScrollResize() {
         ratio = track.clientHeight / content.scrollHeight;
         updateBar();
 
-        // possibly need to update scrollbar visibility based on ratio here, but doesn't quite seem right
+        clearTimeout(resizeDebouceTimeout);
+        resizeDebouceTimeout = setTimeout(recalculateTrackBounds, 10);
+    }
 
-        // may need to "debounce" bounds recalculation(?)
+    function recalculateTrackBounds() {
         const boundingRect = track.getBoundingClientRect();
         trackBounds.updateFromBoundingRect(boundingRect);
 
         const trackStyle = window.getComputedStyle(track, null);
-        trackBounds.setPadding(trackStyle.paddingTop, trackStyle.paddingBottom);
+        trackBounds.setPadding(
+            parseInt(trackStyle.paddingTop),
+            parseInt(trackStyle.paddingBottom)
+        );
+
+        setTimeout(() => {
+            track.style.display =
+                wrap.clientHeight < content.scrollHeight ? "block" : "none";
+        });
     }
 
     function updateBar() {
@@ -167,26 +191,31 @@
             const barHeight = (clientHeight / totalHeight) * 100;
             const barTop = (content.scrollTop / totalHeight) * 100;
 
-            // seems gross - there must be a better way!
-            bar.style.cssText = `height: ${barHeight}%; top: ${barTop}%;`;
+            bar.style.setProperty("height", `${barHeight}%`);
+            bar.style.setProperty("top", `${barTop}%`);
         });
     }
 </script>
 
-<div id="outer">
-    <div id="wrap">
-        <div id="content">
+<div id="outer" on:pointerenter="{onScrollResize}">
+    <div id="wrap" bind:this="{wrap}">
+        <div
+            id="content"
+            bind:this="{content}"
+            on:resize="{onScrollResize}"
+            on:scroll="{onScrollResize}"
+        >
             <slot />
         </div>
     </div>
-    <div id="track">
-        <div id="bar"></div>
+    <div id="track" bind:this="{track}" on:click="{onTrackClick}">
+        <div id="bar" bind:this="{bar}" on:pointerdown="{onStartDrag}"></div>
     </div>
 </div>
 
 <style>
     #outer {
-        overflow: visible !important;
+        overflow-y: visible !important;
         height: 100%;
     }
 
@@ -195,13 +224,15 @@
         height: 100%;
         position: relative;
         z-index: 1;
+        margin-right: 14px;
     }
 
     #content {
         height: 100%;
         width: 100%;
         position: relative;
-        overflow: auto;
+        overflow-y: auto;
+        overflow-x: hidden;
         -moz-box-sizing: border-box;
         box-sizing: border-box;
         scroll-behavior: unset;
@@ -215,16 +246,23 @@
 
     #track {
         position: absolute;
-        right: -15px;
-        top: 0;
-        bottom: 0;
-        width: 9px;
+        right: 4px;
+        border-radius: 4px;
+        transition: background 0.2s;
+        top: 4px;
+        bottom: 4px;
+        width: 10px;
         cursor: default;
+    }
+
+    #track:hover {
+        background: rgb(0, 0, 0, 0.2);
+        transition: background 0.2s;
     }
 
     #bar {
         position: relative;
-        background: rgba(0, 255, 255, 0.4);
+        background: rgb(0, 0, 0, 0.6);
         width: 100%;
         border-radius: 4px;
         right: 0;
@@ -236,20 +274,17 @@
     }
 
     #bar:hover {
-        background: rgba(255, 0, 255, 0.55);
+        background: rgb(0, 0, 0, 0.4);
     }
 
-    #bar.grabbed {
+    #track :global(#bar.grabbed),
+    #track :global(#bar.grabbed:hover) {
         cursor: -moz-grabbing;
         cursor: -webkit-grabbing;
-        background: green;
+        touch-action: none;
     }
 
-    :global(body.grabbed) {
-        cursor: -moz-grabbing;
-        cursor: -webkit-grabbing;
-        -moz-user-select: none;
-        -webkit-user-select: none;
-        user-select: none;
+    :global(body) {
+        overflow-x: hidden;
     }
 </style>

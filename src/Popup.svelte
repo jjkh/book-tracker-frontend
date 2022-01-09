@@ -1,14 +1,27 @@
-<script>
+<script lang="ts">
   import FakeScroll from "./FakeScroll.svelte";
+  export let active = false;
+
+  let pointerDownOnBg = false;
+  function closeModal(e: Event) {
+    if (pointerDownOnBg) active = false;
+    pointerDownOnBg = false;
+  }
 </script>
 
-<div class="bg">
-  <div class="fg">
-    <FakeScroll>
-      <slot />
-    </FakeScroll>
+{#if active}
+  <div
+    class="bg"
+    on:pointerdown|self|stopPropagation="{() => (pointerDownOnBg = true)}"
+    on:pointerup|self|stopPropagation="{closeModal}"
+  >
+    <div class="fg">
+      <FakeScroll>
+        <slot />
+      </FakeScroll>
+    </div>
   </div>
-</div>
+{/if}
 
 <style>
   * {
@@ -30,13 +43,11 @@
 
   .fg {
     position: relative;
-    width: 40rem;
     max-width: 90vw;
-    height: 90vh;
-    max-height: 90vh;
+    max-height: 95vh;
     margin: 2rem auto;
     color: black;
-    border-radius: 0.5rem;
+    border-radius: 6px;
     background: white;
     padding: 10px;
   }

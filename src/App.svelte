@@ -2,14 +2,17 @@
   import { onMount, onDestroy } from "svelte";
   import { request } from "graphql-request";
   import Popup from "./Popup.svelte";
+  import Book from "./Book.svelte";
+  import { debug } from "svelte/internal";
 
   interface SearchResults {
-    findBooks: SearchResult[];
+    findBook: SearchResult[];
   }
 
   interface SearchResult {
     id: number;
     openLibraryId: string;
+    coverId: string | null;
     title: string;
     author: string;
     publishYear: number;
@@ -21,6 +24,7 @@
       findBook(title: "art of electronics") {
         id
         openLibraryId
+        coverId
         title
         author
         publishYear
@@ -29,14 +33,17 @@
     }
   `;
   let count: number = 0;
-  let response: SearchResults | null = null;
+  let books: SearchResults | undefined = undefined;
   let wrapper: HTMLDivElement;
 
   onMount(() => {
     request<SearchResults>(
       `${window.location.protocol}//${window.location.hostname}:8000/graph`,
       query
-    ).then((data) => (response = data));
+    ).then((data) => {
+      books = data;
+      console.log(books);
+    });
 
     // div size hack for mobile viewports
     (function (a) {
@@ -69,9 +76,15 @@
 </script>
 
 <div id="Wrapper" bind:this="{wrapper}" on:load="{updateWrapperHeight}">
-  <Popup active="{response != null}">
-    <pre>{JSON.stringify(response, undefined, 4)}</pre>
-  </Popup>
+  {#if books}
+    <Popup>
+      <div class="books">
+        {#each books.findBook as book}
+          <Book {...book} />&nbsp;
+        {/each}
+      </div>
+    </Popup>
+  {/if}
   <div class="App">
     <p>Page has been open for <code>{count}</code> seconds.</p>
   </div>
@@ -93,5 +106,12 @@
 
   .App p {
     margin: 0.4rem;
+  }
+
+  .books {
+    display: grid;
+    grid-gap: 10px;
+    grid-template-columns: repeat(auto-fill, minmax(10px, 92px));
+    max-width: 100vw;
   }
 </style>

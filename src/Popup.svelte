@@ -1,6 +1,6 @@
 <script lang="ts">
   import FakeScroll from "./FakeScroll.svelte";
-  export let active = false;
+  export let active = true;
 
   let pointerDownOnBg = false;
   function closeModal(e: Event) {
